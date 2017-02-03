@@ -46,6 +46,7 @@ public class Ec2LaunchTask extends AbstractEc2Task {
     private String _privateKeyName;
 
     private String _instanceType;
+    private String _subnetId;
     private String _instanceName;
     private String _userData;
     private String _availabilityZone;
@@ -120,6 +121,14 @@ public class Ec2LaunchTask extends AbstractEc2Task {
     public String getKernelId() {
         return _kernelId;
     }
+    
+    public void setSubnetId(String subnetId) {
+    	_subnetId = subnetId;
+    }
+    
+    public String getSubnetId() {
+    	return _subnetId;
+    }
 
     public void setRamDiskId(String ramDiskId) {
         _ramDiskId = ramDiskId;
@@ -165,26 +174,12 @@ public class Ec2LaunchTask extends AbstractEc2Task {
             if (!isReuseRunningInstances() && instancesRunning) {
                 throw new IllegalStateException("found already running instances for group '" + _groupName + "'");
             }
-            if (!Ec2Util.groupExists(ec2, _groupName)) {
-                LOG.info("group '" + _groupName + "' does not exists - creating it");
-                String groupDescription = getGroupDescription();
-                if (groupDescription == null) {
-                    throw new BuildException("must specify groupDescription");
-                }
-                ec2.createSecurityGroup(new CreateSecurityGroupRequest(_groupName, groupDescription));
+            
+            if(_groupId == null) {
+                checkSecurityGroupExists(ec2);            	
             }
 
-            List<String> securityGroups = Arrays.asList("default", _groupName);
-            List<IpPermission> existingPermissions = Ec2Util.getPermissions(ec2, securityGroups);
-            for (GroupPermission groupPermission : _groupPermissions) {
-                if (groupPermission.getToPort() == -1) {
-                    groupPermission.setToPort(groupPermission.getFromPort());
-                }
-                if (!permissionExists(groupPermission, existingPermissions)) {
-                    LOG.info("did not found permission '" + groupPermission + "' - creating it...");
-                    ec2.authorizeSecurityGroupIngress(new AuthorizeSecurityGroupIngressRequest().withGroupName(_groupName).withIpPermissions(groupPermission.toIpPermission()));
-                }
-            }
+            List<String> securityGroups = setPermissions(ec2);
 
             InstanceGroup instanceGroup = new InstanceGroupImpl(ec2);
             RunInstancesRequest launchConfiguration = new RunInstancesRequest(_ami, _instanceCount, _instanceCount);
@@ -195,12 +190,22 @@ public class Ec2LaunchTask extends AbstractEc2Task {
                 launchConfiguration.setKernelId(_ramDiskId);
             }
             launchConfiguration.setKeyName(_privateKeyName);
-            launchConfiguration.setSecurityGroups(securityGroups);
+            
+            if(_groupId == null) {
+                launchConfiguration.setSecurityGroups(securityGroups);         	
+            } else {
+            	launchConfiguration.setSecurityGroupIds(securityGroups); 
+            }
+            
             if (_userData != null) {
                 launchConfiguration.setUserData(Base64.encodeBase64String(_userData.getBytes()));
             }
             if (_instanceType != null) {
                 launchConfiguration.setInstanceType(_instanceType);
+            }
+            
+            if (_subnetId != null) {
+            	launchConfiguration.setSubnetId(_subnetId);
             }
             launchConfiguration.setPlacement(new Placement(_availabilityZone));
             if (instancesRunning) {
@@ -224,6 +229,46 @@ public class Ec2LaunchTask extends AbstractEc2Task {
             throw new BuildException(e);
         }
     }
+
+	protected void checkSecurityGroupExists(AmazonEC2 ec2) {
+		if (!Ec2Util.groupExists(ec2, _groupName)) {
+		    LOG.info("group '" + _groupName + "' does not exists - creating it");
+		    String groupDescription = getGroupDescription();
+		    if (groupDescription == null) {
+		        throw new BuildException("must specify groupDescription");
+		    }
+		    ec2.createSecurityGroup(new CreateSecurityGroupRequest(_groupName, groupDescription));
+		}
+	}
+
+	protected List<String> setPermissions(AmazonEC2 ec2) {
+		
+		List<String> securityGroups;
+		List<IpPermission> existingPermissions;
+		if(_groupId != null) {
+			securityGroups = Arrays.asList(_groupId);	
+			existingPermissions = Ec2Util.getPermissionsById(ec2, securityGroups);
+		} else {
+			securityGroups = Arrays.asList("default", _groupName);		
+			existingPermissions = Ec2Util.getPermissions(ec2, securityGroups);
+		}
+		
+		for (GroupPermission groupPermission : _groupPermissions) {
+		    if (groupPermission.getToPort() == -1) {
+		        groupPermission.setToPort(groupPermission.getFromPort());
+		    }
+		    if (!permissionExists(groupPermission, existingPermissions)) {
+				if(_groupId != null) {
+			        LOG.info("did not found permission '" + groupPermission + "' - creating it using group id...");
+					ec2.authorizeSecurityGroupIngress(new AuthorizeSecurityGroupIngressRequest().withGroupId(_groupId).withIpPermissions(groupPermission.toIpPermission()));
+				} else {
+					LOG.info("did not found permission '" + groupPermission + "' - creating it using group name...");
+					ec2.authorizeSecurityGroupIngress(new AuthorizeSecurityGroupIngressRequest().withGroupName(_groupName).withIpPermissions(groupPermission.toIpPermission()));
+				}		        
+		    }
+		}
+		return securityGroups;
+	}
 
     protected void validate() {
         for (GroupPermission groupPermission : _groupPermissions) {

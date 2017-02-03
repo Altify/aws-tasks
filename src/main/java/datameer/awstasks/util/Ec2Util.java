@@ -73,12 +73,24 @@ public class Ec2Util {
 
     public static List<IpPermission> getPermissions(AmazonEC2 ec2, Collection<String> securityGroupNames, Filter... filters) {
         List<SecurityGroup> securityGroups = ec2.describeSecurityGroups(new DescribeSecurityGroupsRequest().withGroupNames(securityGroupNames).withFilters(filters)).getSecurityGroups();
-        List<IpPermission> ipPermissions = new ArrayList<IpPermission>(3);
+        
+        return _getPermissions(securityGroups);
+    }
+    
+    public static List<IpPermission> getPermissionsById(AmazonEC2 ec2, Collection<String> securityGroupIds, Filter... filters) {
+    	List<SecurityGroup> securityGroups = ec2.describeSecurityGroups(new DescribeSecurityGroupsRequest().withGroupIds(securityGroupIds).withFilters(filters)).getSecurityGroups();
+    	
+    	return _getPermissions(securityGroups);
+    }
+
+	protected static List<IpPermission> _getPermissions(
+			List<SecurityGroup> securityGroups) {
+		List<IpPermission> ipPermissions = new ArrayList<IpPermission>(3);
         for (SecurityGroup groupDescription : securityGroups) {
             ipPermissions.addAll(groupDescription.getIpPermissions());
         }
         return ipPermissions;
-    }
+	}
 
     public static String[] toStrings(Enum<?>... enumInstances) {
         String[] names = new String[enumInstances.length];
@@ -164,6 +176,18 @@ public class Ec2Util {
             }
             throw e;
         }
+    }
+    
+    public static boolean groupExists(AmazonEC2 ec2, String groupName, String groupId) {
+    	try {
+    		DescribeSecurityGroupsResult groups = ec2.describeSecurityGroups(new DescribeSecurityGroupsRequest().withGroupIds(groupId));
+    		return !groups.getSecurityGroups().isEmpty();
+    	} catch (AmazonServiceException e) {
+    		if (e.getErrorCode().equals("InvalidGroup.NotFound")) {
+    			return false;
+    		}
+    		throw e;
+    	}
     }
 
     public static boolean isAlive(Instance instance) {

@@ -28,14 +28,23 @@ import datameer.awstasks.ant.AbstractAwsTask;
 public abstract class AbstractEc2Task extends AbstractAwsTask {
 
     protected String _groupName;
+    protected String _groupId;
     protected String _region;
 
     public void setGroupName(String name) {
         _groupName = name;
     }
+    
+    public void setGroupId(String id) {
+    	_groupId = id;
+    }
 
     public String getName() {
         return _groupName;
+    }
+    
+    public String getId() {
+    	return _groupId;
     }
 
     public String getRegion() {

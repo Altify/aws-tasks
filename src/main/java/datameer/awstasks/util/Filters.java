@@ -21,7 +21,7 @@ import awstasks.com.amazonaws.services.ec2.model.InstanceStateName;
 public class Filters {
 
     public static Filter groupName(String... values) {
-        return new Filter("group-name").withValues(values);
+        return new Filter("instance.group-name").withValues(values);
     }
 
     public static Filter reservationId(String value) {
